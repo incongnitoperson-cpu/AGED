@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 
 type Prediction = {
@@ -10,7 +10,19 @@ type Prediction = {
   closes_at: string | null
 }
 
-export default function PredictionCard({ prediction, userId, initialVote }: { prediction: Prediction; userId: string; initialVote?: string | null }) {
+export default function PredictionCard({
+  prediction,
+  userId,
+  initialVote,
+  index,
+  total,
+}: {
+  prediction: Prediction
+  userId: string
+  initialVote?: string | null
+  index: number
+  total: number
+}) {
   const [vote, setVote] = useState<string | null>(initialVote || null)
   const [confidence, setConfidence] = useState<'LEAN' | 'LOCK'>('LEAN')
   const [consensus, setConsensus] = useState<{ yeah_percent: number; nah_percent: number; total_count: number } | null>(null)
@@ -22,6 +34,11 @@ export default function PredictionCard({ prediction, userId, initialVote }: { pr
     const { data } = await supabase.rpc('get_consensus_after_vote', { p_prediction_id: prediction.id })
     if (data?.[0]) setConsensus(data[0])
   }
+
+  useEffect(() => {
+    if (initialVote) loadConsensus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function cast(choice: 'YEAH' | 'NAH') {
     if (vote || loading) return
@@ -44,40 +61,56 @@ export default function PredictionCard({ prediction, userId, initialVote }: { pr
     await loadConsensus()
   }
 
+  const closeLabel = prediction.closes_at
+    ? new Date(prediction.closes_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : 'soon'
+
   return (
-    <article className="card">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="pill">{prediction.status.toUpperCase()}</span>
-        {!vote && (
-          <button className="pill" onClick={() => setConfidence(confidence === 'LEAN' ? 'LOCK' : 'LEAN')} style={{ background: 'transparent', color: 'inherit' }}>
-            {confidence}
-          </button>
-        )}
+    <article className="card prediction-card">
+      <div className="card-meta">
+        <span className="pill hot">● HOT</span>
+        <span className="eyebrow">{index} OF {total}</span>
       </div>
+
       <div className="question">{prediction.question}</div>
+      <p className="muted">Closes {closeLabel}</p>
 
       {!vote ? (
-        <div className="row">
-          <button className="voteBtn" onClick={() => cast('YEAH')}>YEAH</button>
-          <button className="voteBtn" onClick={() => cast('NAH')}>NAH</button>
+        <div className="vote-zone">
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="vote-label">YOU’RE ON THE RECORD</div>
+            <button
+              className={`pill ${confidence === 'LOCK' ? 'locked' : ''}`}
+              onClick={() => setConfidence(confidence === 'LEAN' ? 'LOCK' : 'LEAN')}
+            >
+              {confidence === 'LOCK' ? '🔒 LOCK' : 'LEAN'}
+            </button>
+          </div>
+          <div className="row">
+            <button className="voteBtn yeah" disabled={loading} onClick={() => cast('YEAH')}>YEAH</button>
+            <button className="voteBtn nah" disabled={loading} onClick={() => cast('NAH')}>NAH</button>
+          </div>
         </div>
       ) : (
-        <>
-          <p className="muted">You picked <strong style={{ color: 'white' }}>{vote}</strong>.</p>
-          {!consensus ? (
-            <button className="btn secondary" onClick={loadConsensus}>Reveal consensus</button>
-          ) : (
-            <div>
-              <div className="row" style={{ justifyContent: 'space-between' }}>
-                <strong>YEAH {consensus.yeah_percent}%</strong>
-                <strong>NAH {consensus.nah_percent}%</strong>
-              </div>
+        <div className="consensus-box">
+          <div className="vote-label">✓ YOU SAID {vote}</div>
+          {consensus ? (
+            <>
               <div className="bar"><div style={{ width: `${consensus.yeah_percent}%` }} /></div>
-              <p className="muted">{consensus.total_count} prediction{consensus.total_count === 1 ? '' : 's'}</p>
-            </div>
+              <div className="row" style={{ justifyContent: 'space-between', fontSize: 13, fontWeight: 1000 }}>
+                <span>YEAH {consensus.yeah_percent}%</span>
+                <span>NAH {consensus.nah_percent}%</span>
+              </div>
+              <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+                {consensus.total_count} real vote{consensus.total_count === 1 ? '' : 's'} so far.
+              </p>
+            </>
+          ) : (
+            <button className="btn secondary" onClick={loadConsensus}>Show campus split</button>
           )}
-        </>
+        </div>
       )}
+
       {error && <p className="error">{error}</p>}
     </article>
   )
